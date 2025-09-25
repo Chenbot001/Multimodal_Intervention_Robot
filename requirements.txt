@@ -1,0 +1,143 @@
+# VAIT - Visuotactile-Assisted Intervention Technology
+# Core requirements for the complete system
+
+# ============================================================================
+# CORE DEPENDENCIES (Required for basic functionality)
+# ============================================================================
+
+# Serial communication
+pyserial>=3.5
+
+# Input handling for real-time control
+pynput>=1.7.6
+
+# Modbus communication for encoder interface
+minimalmodbus>=2.0.1
+
+# Numerical operations and array processing
+numpy>=1.21.0,<1.25.0
+
+# Computer vision and image processing
+opencv-python>=4.6.0
+
+# Additional OpenCV functionality
+opencv-contrib-python>=4.6.0
+
+# Data visualization and plotting
+matplotlib>=3.5.0
+
+# Scientific computing library
+scipy>=1.8.0
+
+# Data manipulation and analysis
+pandas>=1.4.0
+
+# Statistical data visualization
+seaborn>=0.11.0
+
+# GUI toolkit for analysis interface
+tkinter-dev; platform_system=="Linux"  # Usually pre-installed on Windows
+
+# Machine learning for regression analysis
+scikit-learn>=1.1.0
+
+# ============================================================================
+# HARDWARE-SPECIFIC DEPENDENCIES (Optional based on hardware setup)
+# ============================================================================
+
+# UR Robot control (Universal Robots)
+ur-rtde>=1.5.5
+
+# Windows Management Instrumentation (Windows camera detection)
+wmi>=1.5.1; platform_system=="Windows"
+
+# EtherCAT communication for Bota force sensors
+pysoem>=1.0.8
+
+# ============================================================================
+# DAIMON SENSOR DEPENDENCIES (For visuotactile sensing)
+# ============================================================================
+# Note: Install separately with: cd daimon && pip install -e .
+# Included here for reference - these are handled by the local daimon package
+
+# cupy-cuda12x==12.3.0  # GPU acceleration (CUDA 12.x)
+# pyudev; platform_system=="Linux"  # Linux device management
+
+# ============================================================================
+# DEVELOPMENT AND ANALYSIS TOOLS (Optional for extended functionality)
+# ============================================================================
+
+# Enhanced keyboard input handling
+keyboard>=0.13.5
+
+# System threading and process management
+threading-timer>=0.1.0
+
+# Configuration file handling
+configparser>=5.0.0
+
+# JSON data handling (built-in, but listed for clarity)
+# json (built-in)
+
+# CSV data handling (built-in, but listed for clarity)
+# csv (built-in)
+
+# Date and time handling (built-in, but listed for clarity)
+# datetime (built-in)
+
+# Mathematical functions (built-in, but listed for clarity)
+# math (built-in)
+
+# Operating system interface (built-in, but listed for clarity)
+# os (built-in)
+
+# System-specific parameters (built-in, but listed for clarity)
+# sys (built-in)
+
+# Time-related functions (built-in, but listed for clarity)
+# time (built-in)
+
+# Collections for specialized data structures (built-in, but listed for clarity)
+# collections (built-in)
+
+# Struct for binary data handling (built-in, but listed for clarity)
+# struct (built-in)
+
+# C-style data structures (built-in, but listed for clarity)
+# ctypes (built-in)
+
+# Signal handling (built-in, but listed for clarity)
+# signal (built-in)
+
+# ============================================================================
+# VERSION COMPATIBILITY NOTES
+# ============================================================================
+# - Python 3.8+ required (tested up to 3.10)
+# - Windows 10/11 recommended for full hardware compatibility
+# - Some hardware-specific libraries may require specific versions
+# - GPU dependencies (CUDA) are optional and hardware-dependent
+
+# ============================================================================
+# INSTALLATION NOTES
+# ============================================================================
+# 
+# For complete system setup:
+# 1. pip install -r requirements.txt
+# 2. cd daimon && pip install -e .  (if using Daimon sensors)
+# 3. Install UR robot software if using Universal Robots
+# 4. Configure hardware ports in gripper_complete/config.py
+#
+# For minimal setup (software-only):
+# - Install only core dependencies (first section)
+# - Hardware-specific dependencies can be skipped for simulation/analysis
+#
+# Hardware-specific installation:
+# - Bota sensors: Ensure EtherCAT drivers are installed
+# - UR robot: Install URSim for simulation or connect to physical robot
+# - Arduino: Install Arduino IDE and upload stepper_remote.ino
+# - Cameras: Ensure USB camera drivers are installed
+#
+# Troubleshooting:
+# - If numpy/opencv installation fails, try conda instead of pip
+# - For CUDA acceleration, ensure compatible GPU drivers
+# - Some packages may require Microsoft Visual C++ Build Tools on Windows
