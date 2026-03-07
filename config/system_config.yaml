@@ -1,0 +1,51 @@
+ADAPTIVE_GRIPPING_CONFIG:
+  closing_velocity: 0.1
+  enabled: true
+  opening_velocity: 0.3
+  threshold: 0.5
+CENTERLINE_CONFIG:
+  history_length: 5
+  min_contour_area: 5
+  smoothing_alpha: 0.7
+CONFIG:
+  fixed_motor_speed: 50
+  fixed_target_steps: 20
+  gripper_baud_rate: 921600
+  gripper_can_id: 17
+  gripper_default_open_percent: 50
+  gripper_motor_id: 1
+  gripper_port: COM3
+  homing_speed: 500
+  initial_diameter_mm: 2
+  initial_pos: 500
+  initial_speed: 50
+  max_steps: 1000
+  microsteps: 16
+  sensor_serial_id: 0
+  stepper_baud_rate: 115200
+  stepper_port: COM10
+  ur_robot_gain: 300
+  ur_robot_ip: 192.168.3.4
+  ur_robot_lookahead_time: 0.2
+  ur_robot_step_size: 0.005
+  ur_robot_time_duration: 0.2
+DISPLAY_CONFIG:
+  sensor_fps_calculation_interval: 1.0
+  sensor_image_update_rate_hz: 10
+  show_sensor_images: true
+  update_interval_seconds: 0.5
+GRIPPER_MAX_POS: 0.0
+GRIPPER_MIN_POS: -1.37
+RECORDING_CONFIG:
+  create_session_subdirectories: true
+  default_session_name: acupuncture
+  snapshot_interval: 0.1
+  snapshots_dir: data
+  use_timestamp_session_name: true
+SAFETY_CONFIG:
+  emergency_open_percent: 50
+  safety_check_enabled: true
+  safety_cooldown_seconds: 2.0
+  shear_force_threshold_n: 2.0
+  shear_x_threshold_n: 10.0
+  shear_y_threshold_n: 1.0
