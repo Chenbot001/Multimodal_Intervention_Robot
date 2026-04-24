@@ -1,0 +1,19 @@
+# Sensor suite configuration
+
+daimon:
+  serial_id: 0   # USB camera index for the DW-Tac W visuotactile sensor
+
+  centerline:
+    smoothing_alpha: 0.7    # exponential smoothing weight (higher = less lag, more noise)
+    history_length: 5       # rolling-average window for angle stabilisation
+    min_contour_area: 5     # minimum pixel area to qualify as a valid contour
+
+# Shear safety thresholds — triggers emergency gripper open when exceeded.
+# Sourced from the visuotactile sensor's shear field measurements.
+safety:
+  enabled: true
+  shear_x_threshold_n: 10.0   # N — lateral shear limit
+  shear_y_threshold_n: 1.0    # N — axial shear limit (tighter: tissue/needle damage axis)
+  shear_force_threshold_n: 2.0 # N — resultant magnitude limit (legacy, kept for compatibility)
+  cooldown_seconds: 2.0        # seconds before another safety trigger is allowed
+  emergency_open_percent: 50   # gripper target on safety trigger (matches default open)

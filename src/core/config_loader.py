@@ -1,16 +1,29 @@
 import yaml
 import os
 
-_CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'system_config.yaml')
+_CFG_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'configs')
 
-with open(_CONFIG_PATH, 'r') as f:
-    _data = yaml.safe_load(f)
 
-CONFIG = _data.get('CONFIG', {})
-GRIPPER_MIN_POS = _data.get('GRIPPER_MIN_POS', -1.37)
-GRIPPER_MAX_POS = _data.get('GRIPPER_MAX_POS', 0.0)
-ADAPTIVE_GRIPPING_CONFIG = _data.get('ADAPTIVE_GRIPPING_CONFIG', {})
-DISPLAY_CONFIG = _data.get('DISPLAY_CONFIG', {})
-CENTERLINE_CONFIG = _data.get('CENTERLINE_CONFIG', {})
-RECORDING_CONFIG = _data.get('RECORDING_CONFIG', {})
-SAFETY_CONFIG = _data.get('SAFETY_CONFIG', {})
+def _load(filename: str) -> dict:
+    with open(os.path.join(_CFG_DIR, filename), 'r') as f:
+        return yaml.safe_load(f)
+
+
+# ── Per-device configs ────────────────────────────────────────────────────────
+GRIPPER_CONFIG = _load('gripper.yaml')    # end-effector: steppers + DM motor + gripping
+UR_CONFIG      = _load('ur_robot.yaml')   # UR arm + T265 teleop parameters
+SENSOR_CONFIG  = _load('sensors.yaml')    # Daimon visuotactile + Bota F/T + safety thresholds
+
+# ── Application-level config ──────────────────────────────────────────────────
+SYSTEM_CONFIG  = _load('system.yaml')
+
+# ── Convenience aliases (sub-dicts used directly throughout the codebase) ─────
+ADAPTIVE_GRIPPING_CONFIG = GRIPPER_CONFIG['adaptive_gripping']
+CENTERLINE_CONFIG        = SENSOR_CONFIG['daimon']['centerline']
+SAFETY_CONFIG            = SENSOR_CONFIG['safety']
+DISPLAY_CONFIG           = SYSTEM_CONFIG['display']
+RECORDING_CONFIG         = SYSTEM_CONFIG['recording']
+
+# ── Scalar aliases kept for utils.py and any other direct users ───────────────
+GRIPPER_MIN_POS = GRIPPER_CONFIG['motor']['min_pos']
+GRIPPER_MAX_POS = GRIPPER_CONFIG['motor']['max_pos']

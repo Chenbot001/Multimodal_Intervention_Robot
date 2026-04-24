@@ -1,0 +1,57 @@
+# UR robot arm configuration
+
+ip: 192.168.3.4
+
+# Joint angles [j0..j5] in degrees for each of the 6 UR joints.
+# The arm moves to this configuration on script startup before T265 tracking begins.
+init_pose: [0.0, -120.0, -90.0, -60.0, 90.0, -45.0]
+
+# Speed and acceleration used for the one-shot moveJ to init_pose only.
+init_move_speed: 0.5   # rad/s
+init_move_accel: 0.5   # rad/s²
+# Keyboard step-mode servo parameters
+step_size: 0.005       # metres per key press
+time_duration: 0.2     # seconds  — servoL time parameter
+lookahead_time: 0.2    # seconds  — servoL lookahead
+gain: 300              # servoL gain
+
+# T265 tracking teleop parameters
+# Higher frequency loop (500 Hz) requires tighter lookahead and lower dt
+# than the keyboard step mode above.
+t265_teleop:
+  translation_scale: 1.0   # 1.0 = 1:1 camera-to-robot translation mapping
+  servo_dt: 0.002           # seconds  — ~500 Hz control loop
+  servo_lookahead: 0.1      # seconds  — tighter than keyboard step mode
+  servo_speed: 0.5          # m/s
+  servo_accel: 0.5          # m/s²
+
+  # ── Alignment decomposition ───────────────────────────────────────────────
+  # The full camera→robot mapping splits into two independent 3×3 rotations:
+  #
+  #   t265_to_ur_align = operator_to_ur  @  cam_to_operator
+  #
+  # Update cam_to_operator by running:  python scripts/Calibrate_T265.py
+  # operator_to_ur only changes if the desired control semantics change.
+
+  # Camera body frame → operator-perspective frame (physical mounting).
+  # operator convention: +X right, +Y up, -Z forward
+  # Camera and operator perspectives are already aligned; identity matrix.
+  cam_to_operator:
+    - [ 1,  0,  0]
+    - [ 0,  1,  0]
+    - [ 0,  0,  1]
+
+  # Operator-perspective → UR base frame (semantic control design).
+  # forward(-Z)→UR synced; right(+X) and up(+Y) directions negated to fix reversal.
+  operator_to_ur:
+    - [ 0,  1,  0]
+    - [ 0,  0, -1]
+    - [-1,  0,  0]
+
+  # Combined 4×4 (auto-updated by calibration script):
+  #   t265_to_ur_align = operator_to_ur @ cam_to_operator
+  t265_to_ur_align:
+    - [ 0,  1,  0,  0]
+    - [ 0,  0, -1,  0]
+    - [-1,  0,  0,  0]
+    - [ 0,  0,  0,  1]

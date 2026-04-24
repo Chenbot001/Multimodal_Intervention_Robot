@@ -25,13 +25,13 @@ import msvcrt
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'actuators', 'damiao', 'DM_Control'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
 
 from DM_CAN import *
+from src.core.config_loader import GRIPPER_CONFIG, GRIPPER_MIN_POS, GRIPPER_MAX_POS, ADAPTIVE_GRIPPING_CONFIG
 
-# Gripper position limits (in radians)
-GRIPPER_MIN_POS = -1.35  # Fully closed position
-GRIPPER_MAX_POS = 0.0    # Fully open position
-DEFAULT_VELOCITY = 0.3   # Default movement velocity
+# Gripper position limits — sourced from configs/gripper.yaml
+DEFAULT_VELOCITY = ADAPTIVE_GRIPPING_CONFIG["opening_velocity"]
 
 def percentage_to_position(percentage):
     """
@@ -47,8 +47,8 @@ def percentage_to_position(percentage):
     percentage = max(0, min(100, percentage))
     
     # Map 0-100% to [GRIPPER_MAX_POS, GRIPPER_MIN_POS]
-    # 0% = GRIPPER_MAX_POS (0 rad = fully open)
-    # 100% = GRIPPER_MIN_POS (-1.35 rad = fully closed)
+    # 0% = GRIPPER_MAX_POS (fully open)
+    # 100% = GRIPPER_MIN_POS (fully closed)
     position = GRIPPER_MAX_POS + (percentage/100.0) * (GRIPPER_MIN_POS - GRIPPER_MAX_POS)
     
     return position
@@ -90,10 +90,16 @@ def setup_motor():
     """Initialize and configure the motor"""
     try:
         # Setup motor
-        motor = Motor(DM_Motor_Type.DM4310, 0x01, 0x11)
-        
+        motor = Motor(DM_Motor_Type.DM4310,
+                      GRIPPER_CONFIG["motor"]["motor_id"],
+                      GRIPPER_CONFIG["motor"]["can_id"])
+
         # Setup serial connection
-        serial_port = serial.Serial('COM3', 921600, timeout=0.5)
+        serial_port = serial.Serial(
+            GRIPPER_CONFIG["motor"]["port"],
+            GRIPPER_CONFIG["motor"]["baud_rate"],
+            timeout=0.5,
+        )
         motor_control = MotorControl(serial_port)
         
         # Add and enable motor

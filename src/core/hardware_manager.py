@@ -4,6 +4,7 @@ Manages all motor communications (Stepper and Gripper)
 """
 
 import serial
+import serial.tools.list_ports
 import time
 import threading
 import sys
@@ -11,10 +12,100 @@ import os
 import numpy as np
 import cv2
 
+# CH340 USB-serial chip used by Arduino Nano clones (same VID/PID as many
+# USB-to-RS485 adapters, so VID/PID alone cannot distinguish the Arduino).
+_ARDUINO_NANO_VID = 0x1A86
+_ARDUINO_NANO_PID = 0x7523
+# Substring expected in the stepper Arduino's startup message
+_ARDUINO_BOOT_MARKER = b"Arduino Ready"
+# Baud rate used by stepper_remote.ino
+_STEPPER_BAUD = 115200
+
+
+def _probe_arduino(port: str, boot_wait: float = 3.0) -> bool:
+    """Return True if *port* responds with the stepper Arduino's boot message.
+
+    Opens the port, pulses DTR to reset the Arduino, waits *boot_wait* seconds
+    for the sketch to start, then reads whatever the device sends.  The RS-485
+    encoder adapter produces zero bytes; the Arduino prints its "Ready" banner.
+    """
+    try:
+        ser = serial.Serial(port, _STEPPER_BAUD, timeout=1, dsrdtr=False)
+        # Single DTR pulse → Arduino RESET pin sees a falling edge → reboot
+        ser.setDTR(False)
+        time.sleep(0.05)
+        ser.setDTR(True)
+        time.sleep(0.05)
+        ser.setDTR(False)
+        time.sleep(boot_wait)
+        buf = b""
+        deadline = time.time() + 1.0
+        while time.time() < deadline:
+            if ser.in_waiting:
+                buf += ser.read(ser.in_waiting)
+            time.sleep(0.05)
+        ser.close()
+        return _ARDUINO_BOOT_MARKER in buf
+    except Exception:
+        return False
+
+
+def find_stepper_port() -> str:
+    """Return the serial port of the Arduino Nano stepper controller.
+
+    Detection order:
+      1. Active probe — pulse DTR on each candidate port and listen for the
+         Arduino's "Arduino Ready" boot banner.  This distinguishes the Arduino
+         from RS-485 adapters that share the same CH340 VID/PID (0x1A86/0x7523).
+      2. VID/PID fallback — returns the first CH340 port if the probe fails
+         (e.g. firmware not yet installed or Arduino already running / no reset).
+    Raises RuntimeError if no port is found.
+    """
+    candidates = list(serial.tools.list_ports.comports())
+    ch340_ports = [
+        p.device for p in candidates
+        if p.vid == _ARDUINO_NANO_VID and p.pid == _ARDUINO_NANO_PID
+    ]
+    usb_serial_ports = [
+        p.device for p in candidates
+        if p.device.startswith(('/dev/ttyUSB', '/dev/ttyACM'))
+        and p.device not in ch340_ports
+    ]
+    all_candidates = ch340_ports + usb_serial_ports
+
+    if not all_candidates:
+        raise RuntimeError(
+            "Arduino Nano stepper controller not found — no USB-serial ports detected. "
+            "Check USB connection and update stepper.port in configs/gripper.yaml."
+        )
+
+    # 1. Active probe (reliable when multiple CH340 devices share the same VID/PID)
+    if len(all_candidates) > 1 or True:  # always probe so we catch wrong-port configs
+        print(f"  Probing ports for Arduino stepper controller: {all_candidates}")
+        for port in all_candidates:
+            print(f"    Probing {port} …", end=" ", flush=True)
+            if _probe_arduino(port):
+                print("✓ Arduino found")
+                return port
+            print("no response")
+
+    # 2. VID/PID fallback
+    if ch340_ports:
+        print(f"  ⚠ Active probe inconclusive — falling back to first CH340 port: {ch340_ports[0]}")
+        return ch340_ports[0]
+
+    raise RuntimeError(
+        "Arduino Nano stepper controller not found. "
+        "Check USB connection and update stepper.port in configs/gripper.yaml."
+    )
+
 # Add paths for local imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'actuators', 'damiao', 'DM_Control'))
 
-from src.core.config_loader import CONFIG, GRIPPER_MIN_POS, GRIPPER_MAX_POS, ADAPTIVE_GRIPPING_CONFIG
+from src.core.config_loader import (
+    GRIPPER_CONFIG, UR_CONFIG, ADAPTIVE_GRIPPING_CONFIG,
+    GRIPPER_MIN_POS, GRIPPER_MAX_POS,
+)
 from src.core.utils import (
     percentage_to_position, 
     position_to_percentage, 
@@ -46,22 +137,28 @@ class StepperMotorManager:
         self.serial_connection = None
         self.connected = False
         self.last_message = ""
-        self.m1_target_pos = CONFIG["initial_pos"]
-        self.m2_target_pos = CONFIG["initial_pos"]
-        self.speed = CONFIG["initial_speed"]
+        self.m1_target_pos = GRIPPER_CONFIG["stepper"]["initial_pos"]
+        self.m2_target_pos = GRIPPER_CONFIG["stepper"]["initial_pos"]
+        self.speed = GRIPPER_CONFIG["stepper"]["initial_speed"]
         self.current_angle_deg = 0.0
         
     def connect(self):
         """Initialize stepper motor connection"""
         try:
+            cfg_port = GRIPPER_CONFIG["stepper"]["port"]
+            # Fall back to auto-detection when the configured port does not exist
+            if not os.path.exists(cfg_port):
+                print(f"⚠ Port '{cfg_port}' not found — auto-detecting Arduino Nano …")
+                cfg_port = find_stepper_port()
+                print(f"  Detected stepper port: {cfg_port}")
             self.serial_connection = serial.Serial(
-                CONFIG["stepper_port"], 
-                CONFIG["stepper_baud_rate"], 
-                timeout=1
+                cfg_port,
+                GRIPPER_CONFIG["stepper"]["baud_rate"],
+                timeout=1,
             )
             self.connected = True
-            self.last_message = f"Connected to {CONFIG['stepper_port']}"
-            print(f"✓ Stepper motor connected to {CONFIG['stepper_port']}")
+            self.last_message = f"Connected to {cfg_port}"
+            print(f"✓ Stepper motor connected to {cfg_port}")
             time.sleep(2)  # Give Arduino time to boot
             
             # Perform initial homing and centering (like the original script)
@@ -72,9 +169,9 @@ class StepperMotorManager:
                 
                 # Move to starting center position using homing speed
                 self.send_move_command(
-                    CONFIG["initial_pos"], 
-                    CONFIG["initial_pos"], 
-                    CONFIG["homing_speed"]
+                    GRIPPER_CONFIG["stepper"]["initial_pos"], 
+                    GRIPPER_CONFIG["stepper"]["initial_pos"], 
+                    GRIPPER_CONFIG["stepper"]["homing_speed"]
                 )
                 time.sleep(2)  # Give time for centering to complete
                 
@@ -82,8 +179,8 @@ class StepperMotorManager:
                 print("✓ Stepper motors homed and centered")
             
             return True
-        except serial.SerialException as e:
-            print(f"❌ Could not connect to stepper motor on {CONFIG['stepper_port']}: {e}")
+        except (serial.SerialException, RuntimeError) as e:
+            print(f"❌ Could not connect to stepper motor: {e}")
             self.last_message = f"Connection failed: {e}"
             return False
     
@@ -93,7 +190,7 @@ class StepperMotorManager:
             try:
                 self.send_command("<STOP>\n")
                 time.sleep(0.1)
-                self.send_move_command(0, 0, CONFIG["homing_speed"])
+                self.send_move_command(0, 0, GRIPPER_CONFIG["stepper"]["homing_speed"])
                 time.sleep(2)
                 self.serial_connection.close()
                 print("✓ Stepper motor serial port closed")
@@ -112,9 +209,9 @@ class StepperMotorManager:
             return
         
         # Clamp position to physical limits as a safety measure
-        m1 = max(0, min(m1, CONFIG["max_steps"]))
-        m2 = max(0, min(m2, CONFIG["max_steps"]))
-        command = f"<{int(m1)},{int(m2)},{int(speed)},{CONFIG['microsteps']}>\n"
+        m1 = max(0, min(m1, GRIPPER_CONFIG["stepper"]["max_steps"]))
+        m2 = max(0, min(m2, GRIPPER_CONFIG["stepper"]["max_steps"]))
+        command = f"<{int(m1)},{int(m2)},{int(speed)},{GRIPPER_CONFIG['stepper']['microsteps']}>\n"
         self.send_command(command)
         
         # Update the target positions
@@ -154,8 +251,8 @@ class StepperMotorManager:
             new_m2 = self.m2_target_pos + steps
         
         # Clamp to physical limits
-        new_m1 = max(0, min(CONFIG["max_steps"], new_m1))
-        new_m2 = max(0, min(CONFIG["max_steps"], new_m2))
+        new_m1 = max(0, min(GRIPPER_CONFIG["stepper"]["max_steps"], new_m1))
+        new_m2 = max(0, min(GRIPPER_CONFIG["stepper"]["max_steps"], new_m2))
         
         # Send the move command
         self.send_move_command(new_m1, new_m2, self.speed)
@@ -184,9 +281,9 @@ class StepperMotorManager:
             
             # Move to starting center position
             self.send_move_command(
-                CONFIG["initial_pos"], 
-                CONFIG["initial_pos"], 
-                CONFIG["homing_speed"]
+                GRIPPER_CONFIG["stepper"]["initial_pos"], 
+                GRIPPER_CONFIG["stepper"]["initial_pos"], 
+                GRIPPER_CONFIG["stepper"]["homing_speed"]
             )
     
     def stop_motors(self):
@@ -197,9 +294,9 @@ class StepperMotorManager:
     def reset_to_center(self):
         """Reset stepper position to center and zero angle tracking"""
         self.send_move_command(
-            CONFIG["initial_pos"], 
-            CONFIG["initial_pos"], 
-            CONFIG["homing_speed"]
+            GRIPPER_CONFIG["stepper"]["initial_pos"], 
+            GRIPPER_CONFIG["stepper"]["initial_pos"], 
+            GRIPPER_CONFIG["stepper"]["homing_speed"]
         )
         self.current_angle_deg = 0.0  # Reset angle tracking
     
@@ -250,10 +347,10 @@ class GripperMotorManager:
         
         try:
             # Setup motor
-            self.motor = Motor(DM_Motor_Type.DM4310, CONFIG["gripper_motor_id"], CONFIG["gripper_can_id"])
+            self.motor = Motor(DM_Motor_Type.DM4310, GRIPPER_CONFIG["motor"]["motor_id"], GRIPPER_CONFIG["motor"]["can_id"])
             
             # Setup serial connection
-            self.serial_port = serial.Serial(CONFIG["gripper_port"], CONFIG["gripper_baud_rate"], timeout=0.5)
+            self.serial_port = serial.Serial(GRIPPER_CONFIG["motor"]["port"], GRIPPER_CONFIG["motor"]["baud_rate"], timeout=0.5)
             self.motor_control = MotorControl(self.serial_port)
             
             # Add and enable motor
@@ -322,7 +419,7 @@ class GripperMotorManager:
             # OR if moving to default open position, treat as opening
             is_opening_operation = (
                 velocity == ADAPTIVE_GRIPPING_CONFIG["opening_velocity"] or 
-                percentage <= CONFIG["gripper_default_open_percent"]
+                percentage <= GRIPPER_CONFIG["motor"]["default_open_percent"]
             )
             
             if percentage > 0 and not is_opening_operation:
@@ -449,11 +546,11 @@ class URRobotManager:
         self.connected = False
         self.last_message = ""
         self.current_pose = None
-        self.robot_ip = CONFIG["ur_robot_ip"]
-        self.step_size = CONFIG["ur_robot_step_size"]
-        self.time_duration = CONFIG["ur_robot_time_duration"]
-        self.lookahead_time = CONFIG["ur_robot_lookahead_time"]
-        self.gain = CONFIG["ur_robot_gain"]
+        self.robot_ip = UR_CONFIG["ip"]
+        self.step_size = UR_CONFIG["step_size"]
+        self.time_duration = UR_CONFIG["time_duration"]
+        self.lookahead_time = UR_CONFIG["lookahead_time"]
+        self.gain = UR_CONFIG["gain"]
         
     def rotation_vector_to_rpy(self, rotation_vector):
         """Convert rotation vector to roll, pitch, yaw"""
@@ -648,7 +745,7 @@ class HardwareManager:
         if self.gripper.connected:
             try:
                 print("Opening gripper to release objects...")
-                self.gripper.move_to_percentage(CONFIG["gripper_default_open_percent"])  # Open to default position
+                self.gripper.move_to_percentage(GRIPPER_CONFIG["motor"]["default_open_percent"])  # Open to default position
                 time.sleep(1)  # Give time for gripper to open
             except:
                 print("❌ Failed to open gripper")

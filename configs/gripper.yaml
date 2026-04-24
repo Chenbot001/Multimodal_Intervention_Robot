@@ -1,0 +1,36 @@
+# End-effector module configuration
+# Steppers are mounted on the gripper fingers to add rotational DoF,
+# so all finger/rotation actuation lives here together.
+
+stepper:
+  # Arduino Nano CH340 port.
+  # Run:  python -m serial.tools.list_ports  to find the current port.
+  port: /dev/ttyUSB1
+  baud_rate: 115200
+  initial_pos: 500        # steps — midpoint of 0–1000 range
+  initial_speed: 50
+  homing_speed: 500
+  max_steps: 1000
+  microsteps: 16
+  fixed_target_steps: 20  # steps per key press
+  fixed_motor_speed: 150    # speed used during step-mode key presses
+
+encoder:
+  # RS-485 rotary encoder port.
+  # Run:  python -m serial.tools.list_ports  to find the current port.
+  port: /dev/ttyUSB0
+
+motor:
+  port: COM3
+  baud_rate: 921600
+  motor_id: 1
+  can_id: 17
+  default_open_percent: 50
+  min_pos: -1.37   # radians — fully closed
+  max_pos: 0.0     # radians — fully open
+
+adaptive_gripping:
+  enabled: true
+  closing_velocity: 0.1   # rad/s  — slow approach to avoid overshoot
+  opening_velocity: 0.3   # rad/s  — faster release
+  threshold: 0.5          # net depth intensity threshold for contact detection

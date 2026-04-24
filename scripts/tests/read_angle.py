@@ -1,26 +1,100 @@
 import minimalmodbus
+import serial
+import serial.tools.list_ports
 import time
-import keyboard
 import csv
 import matplotlib.pyplot as plt
 from datetime import datetime
 import os
+import sys
+from pynput import keyboard as kb
 
 # --- Configuration ---
-PORT_NAME = 'COM11'
 SLAVE_ADDRESS = 1
 BAUDRATE = 9600
 READ_REGISTER_ADDRESS = 0
-ZERO_REGISTER_ADDRESS = 8      # Register for the zero command
-DIRECTION_REGISTER_ADDRESS = 9 # Register for the direction command
+ZERO_REGISTER_ADDRESS = 8
+DIRECTION_REGISTER_ADDRESS = 9
+
+# Linux port candidates for USB-RS485 adapters (CH340, FTDI, CP210x, etc.)
+_RS485_PREFIXES = ('/dev/ttyUSB', '/dev/ttyACM')
+
+# Output directory relative to the project root
+_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'encoder_recordings')
 
 # Constants for decoding
 SINGLE_TURN_RESOLUTION = 2**15
+
+
+def find_encoder_port() -> str:
+    """
+    Scan available serial ports and return the first one that responds to a
+    Modbus read from the encoder.  Candidate ports are filtered to USB-serial
+    adapters (ttyUSB*, ttyACM*) which is how RS-485 dongles appear on Linux.
+    """
+    candidates = [
+        p.device for p in serial.tools.list_ports.comports()
+        if p.device.startswith(_RS485_PREFIXES)
+    ]
+
+    if not candidates:
+        raise RuntimeError(
+            "No USB-serial ports found (/dev/ttyUSB* or /dev/ttyACM*).\n"
+            "Check that the RS-485 adapter is plugged in and the 'dialout' "
+            "group permission is set (sudo usermod -aG dialout $USER)."
+        )
+
+    print(f"Found {len(candidates)} USB-serial port(s): {candidates}")
+    print("Probing for encoder...")
+
+    for port in candidates:
+        try:
+            inst = minimalmodbus.Instrument(port, SLAVE_ADDRESS)
+            inst.serial.baudrate = BAUDRATE
+            inst.serial.bytesize = 8
+            inst.serial.parity = minimalmodbus.serial.PARITY_NONE
+            inst.serial.stopbits = 1
+            inst.serial.timeout = 0.5
+            inst.mode = minimalmodbus.MODE_RTU
+            # A successful read proves this is the encoder
+            inst.read_long(READ_REGISTER_ADDRESS, 3, False)
+            print(f"✓ Encoder found on {port}")
+            return port
+        except Exception:
+            pass
+
+    raise RuntimeError(
+        f"Encoder did not respond on any of: {candidates}\n"
+        "Check wiring, baud rate, and slave address."
+    )
+
 
 # Data collection variables
 is_recording = False
 recorded_data = []
 recording_start_time = None
+
+# Keys currently held down (populated by pynput listener)
+_keys_pressed: set = set()
+
+
+def _on_press(key):
+    try:
+        _keys_pressed.add(key.char)
+    except AttributeError:
+        pass  # special keys ignored
+
+
+def _on_release(key):
+    try:
+        _keys_pressed.discard(key.char)
+    except AttributeError:
+        pass
+
+
+def is_pressed(char: str) -> bool:
+    """Return True while the given character key is held down."""
+    return char in _keys_pressed
 
 def zero_encoder(instrument):
     """Sends the command to zero the encoder."""
@@ -125,8 +199,9 @@ def save_and_plot_data(data, duration):
     
     # Create filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    csv_filename = f"rotary_encoder/encoder_data_{timestamp}.csv"
-    plot_filename = f"rotary_encoder/encoder_plot_{timestamp}.png"
+    os.makedirs(_OUTPUT_DIR, exist_ok=True)
+    csv_filename = os.path.join(_OUTPUT_DIR, f"encoder_data_{timestamp}.csv")
+    plot_filename = os.path.join(_OUTPUT_DIR, f"encoder_plot_{timestamp}.png")
     
     # Save to CSV
     try:
@@ -191,6 +266,13 @@ def save_and_plot_data(data, duration):
 
 def main():
     """Main function to connect to the encoder and read data."""
+    # Locate encoder port automatically
+    try:
+        port_name = find_encoder_port()
+    except RuntimeError as e:
+        print(f"\n❌ {e}")
+        sys.exit(1)
+
     # State variables for keyboard input
     z_key_was_pressed = False
     d_key_was_pressed = False
@@ -198,8 +280,13 @@ def main():
     k_key_was_pressed = False
     is_ccw = False  # Start with default direction CW
 
+    # Start pynput keyboard listener (background thread, no root required)
+    listener = kb.Listener(on_press=_on_press, on_release=_on_release)
+    listener.daemon = True
+    listener.start()
+
     try:
-        instrument = minimalmodbus.Instrument(PORT_NAME, SLAVE_ADDRESS)
+        instrument = minimalmodbus.Instrument(port_name, SLAVE_ADDRESS)
         instrument.serial.baudrate = BAUDRATE
         instrument.serial.bytesize = 8
         instrument.serial.parity = minimalmodbus.serial.PARITY_NONE
@@ -207,7 +294,7 @@ def main():
         instrument.serial.timeout = 0.5
         instrument.mode = minimalmodbus.MODE_RTU
         
-        print(f"Successfully connected to encoder on {PORT_NAME}...")
+        print(f"Successfully connected to encoder on {port_name}...")
         print("Controls:")
         print("  'z' - Zero encoder")
         print("  'd' - Toggle direction")
@@ -222,31 +309,31 @@ def main():
             # --- Handle Keyboard Input (Single press detection) ---
 
             # Zeroing ('z' key)
-            if keyboard.is_pressed('z') and not z_key_was_pressed:
+            if is_pressed('z') and not z_key_was_pressed:
                 zero_encoder(instrument)
                 z_key_was_pressed = True
-            elif not keyboard.is_pressed('z'):
+            elif not is_pressed('z'):
                 z_key_was_pressed = False
 
             # Direction Toggle ('d' key)
-            if keyboard.is_pressed('d') and not d_key_was_pressed:
+            if is_pressed('d') and not d_key_was_pressed:
                 is_ccw = set_direction(instrument, not is_ccw) # Toggle the state
                 d_key_was_pressed = True
-            elif not keyboard.is_pressed('d'):
+            elif not is_pressed('d'):
                 d_key_was_pressed = False
 
             # Start Recording ('j' key)
-            if keyboard.is_pressed('j') and not j_key_was_pressed:
+            if is_pressed('j') and not j_key_was_pressed:
                 start_recording()
                 j_key_was_pressed = True
-            elif not keyboard.is_pressed('j'):
+            elif not is_pressed('j'):
                 j_key_was_pressed = False
 
             # Stop Recording ('k' key)
-            if keyboard.is_pressed('k') and not k_key_was_pressed:
+            if is_pressed('k') and not k_key_was_pressed:
                 stop_recording()
                 k_key_was_pressed = True
-            elif not keyboard.is_pressed('k'):
+            elif not is_pressed('k'):
                 k_key_was_pressed = False
 
             # --- Read and Decode Encoder Data ---
@@ -292,7 +379,9 @@ def main():
                 break
 
     except Exception as e:
-        print(f"Failed to connect on {PORT_NAME}. Error: {e}")
+        print(f"Failed to connect on {port_name}. Error: {e}")
+    finally:
+        listener.stop()
 
 if __name__ == "__main__":
     main()

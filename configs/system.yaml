@@ -1,0 +1,17 @@
+# Application-level system configuration
+# Device-specific parameters live in gripper.yaml, ur_robot.yaml, sensors.yaml
+
+initial_diameter_mm: 2   # default object diameter used for rotation calculations
+
+display:
+  update_interval_seconds: 0.5
+  sensor_image_update_rate_hz: 10
+  sensor_fps_calculation_interval: 1.0
+  show_sensor_images: true
+
+recording:
+  snapshots_dir: data
+  snapshot_interval: 0.1            # seconds between JSON snapshots
+  default_session_name: acupuncture
+  use_timestamp_session_name: true
+  create_session_subdirectories: true

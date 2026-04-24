@@ -1,29 +1,27 @@
 # File: interactive_control.py
 
+import sys
+import os
 import serial
 import time
-import os
 import threading
 from pynput import keyboard
 
-# --- Configuration ---
-CONFIG = {
-    "port": "COM9",
-    "baud_rate": 115200,
-    "microsteps": 16,
-    "max_steps": 1000,
-    "initial_pos": 500,
-    "initial_speed": 100,
-}
+# Allow importing from the project root (src/core/config_loader)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..'))
+from src.core.config_loader import GRIPPER_CONFIG
+
+# Shorthand for stepper sub-config
+_SC = GRIPPER_CONFIG["stepper"]
 
 # --- State Tracking ---
 class MotorState:
     """A class to hold the live state of the motor controller."""
     def __init__(self):
         # Target state that we will command
-        self.m1_target_pos = CONFIG["initial_pos"]
-        self.m2_target_pos = CONFIG["initial_pos"]
-        self.speed = CONFIG["initial_speed"]
+        self.m1_target_pos = _SC["initial_pos"]
+        self.m2_target_pos = _SC["initial_pos"]
+        self.speed = _SC["initial_speed"]
         self.step_size = 50  # How many steps to move per key press
 
         # Last known message from Arduino
@@ -55,9 +53,9 @@ def send_command(ser, command):
 def send_move_command(ser, m1, m2, speed):
     """Constructs and sends a standard motor move command."""
     # Clamp position to physical limits as a safety measure
-    m1 = max(0, min(m1, CONFIG["max_steps"]))
-    m2 = max(0, min(m2, CONFIG["max_steps"]))
-    command = f"<{int(m1)},{int(m2)},{int(speed)},{CONFIG['microsteps']}>\n"
+    m1 = max(0, min(m1, _SC["max_steps"]))
+    m2 = max(0, min(m2, _SC["max_steps"]))
+    command = f"<{int(m1)},{int(m2)},{int(speed)},{_SC['microsteps']}>\n"
     send_command(ser, command)
     # Update the state's target position
     state.m1_target_pos = m1
@@ -103,7 +101,7 @@ def on_press(key):
 
         # --- Utility Commands ---
         elif key.char == 'r': # Reset to initial position
-             send_move_command(ser, CONFIG["initial_pos"], CONFIG["initial_pos"], state.speed)
+             send_move_command(ser, _SC["initial_pos"], _SC["initial_pos"], state.speed)
 
     except AttributeError:
         # Handle special keys like spacebar and escape
@@ -118,8 +116,8 @@ def on_press(key):
 if __name__ == "__main__":
     ser = None
     try:
-        ser = serial.Serial(CONFIG["port"], CONFIG["baud_rate"], timeout=1)
-        print(f"Connected to {CONFIG['port']}. Starting control loop...")
+        ser = serial.Serial(_SC["port"], _SC["baud_rate"], timeout=1)
+        print(f"Connected to {_SC['port']}. Starting control loop...")
         time.sleep(2) # Give Arduino time to boot
 
         # Start the background thread for reading serial messages
@@ -133,7 +131,7 @@ if __name__ == "__main__":
         time.sleep(10) # Give homing time to complete, adjust as needed
 
         # Move to starting center position
-        send_move_command(ser, CONFIG["initial_pos"], CONFIG["initial_pos"], state.speed)
+        send_move_command(ser, _SC["initial_pos"], _SC["initial_pos"], state.speed)
 
         # Start the keyboard listener
         with keyboard.Listener(on_press=on_press) as listener:
@@ -143,7 +141,7 @@ if __name__ == "__main__":
             listener.join()
     
     except serial.SerialException as e:
-        print(f"\nError: Could not open serial port {CONFIG['port']}.")
+        print(f"\nError: Could not open serial port {_SC['port']}.")
         print(f"Details: {e}")
     except Exception as e:
         print(f"\nAn unexpected error occurred: {e}")

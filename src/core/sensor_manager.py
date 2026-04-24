@@ -39,7 +39,7 @@ except ImportError:
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'sensors', 'daimon'))
 
 from src.core.config_loader import (
-    CONFIG, DISPLAY_CONFIG, ADAPTIVE_GRIPPING_CONFIG, CENTERLINE_CONFIG, SAFETY_CONFIG
+    GRIPPER_CONFIG, SENSOR_CONFIG, DISPLAY_CONFIG, ADAPTIVE_GRIPPING_CONFIG, CENTERLINE_CONFIG, SAFETY_CONFIG
 )
 
 # Import sensor functionality
@@ -97,7 +97,7 @@ class DaimonManager:
             return False
         
         try:
-            self.sensor = Sensor(CONFIG["sensor_serial_id"])
+            self.sensor = Sensor(SENSOR_CONFIG["daimon"]["serial_id"])
             self.connected = True
             self.last_message = "Sensor connected successfully"
             print("✓ Depth sensor connected")
@@ -272,7 +272,7 @@ class DaimonManager:
                 gripper = state.hardware.gripper
                 
                 # If gripper is actively gripping or closed significantly, hold last valid angle
-                if gripper.is_gripping or gripper.gripper_closure_percent > CONFIG["gripper_default_open_percent"]:
+                if gripper.is_gripping or gripper.gripper_closure_percent > GRIPPER_CONFIG["motor"]["default_open_percent"]:
                     # Gripper is closed/gripping - hold the last valid angle
                     return self.last_valid_angle_offset
                 else:
@@ -615,7 +615,7 @@ class DaimonManager:
         Returns:
             bool: True if safety action was triggered, False otherwise
         """
-        if not SAFETY_CONFIG["safety_check_enabled"]:
+        if not SAFETY_CONFIG["enabled"]:
             return False
         
         current_time = time.time()
@@ -626,7 +626,7 @@ class DaimonManager:
         self.last_shear_magnitude = shear_magnitude
         
         # Check if we're in cooldown period
-        if (current_time - self.last_safety_trigger_time) < SAFETY_CONFIG["safety_cooldown_seconds"]:
+        if (current_time - self.last_safety_trigger_time) < SAFETY_CONFIG["cooldown_seconds"]:
             return False
         
         # Check individual component thresholds
@@ -681,7 +681,7 @@ class DaimonManager:
             dict: Safety status information
         """
         return {
-            'safety_enabled': SAFETY_CONFIG["safety_check_enabled"],
+            'safety_enabled': SAFETY_CONFIG["enabled"],
             'shear_x_threshold': SAFETY_CONFIG["shear_x_threshold_n"],
             'shear_y_threshold': SAFETY_CONFIG["shear_y_threshold_n"], 
             'shear_threshold': SAFETY_CONFIG["shear_force_threshold_n"],  # Deprecated - for backward compatibility
